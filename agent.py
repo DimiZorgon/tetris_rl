@@ -26,7 +26,7 @@ class Agent:
     def __init__(self, state_size):
         self.state_size = state_size
         self.memory = deque(maxlen=20000)
-        self.gamma = 0.99 # CHANGEMENT: 0.99 pour une vision sur le long terme (100 coups d'avance)
+        self.gamma = 0.99 
         self.epsilon = 1.0
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.998
@@ -38,7 +38,6 @@ class Agent:
         self.update_target_network() 
 
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-        # CHANGEMENT: Huber Loss (amortisseur pour les grosses récompenses comme +300)
         self.criterion = nn.SmoothL1Loss() 
 
     def update_target_network(self):
@@ -122,12 +121,18 @@ if __name__ == "__main__":
     episodes = 500000
     
     model_file = "tetris_ai_model.pth"
-    best_model_file = "tetris_ai_model_BEST.pth" # Le coffre-fort !
+    best_model_file = "tetris_ai_model_BEST.pth" 
     agent.load(model_file)
     
     best_score = 0
     
-    MODE_TEST = False 
+    # ==========================================
+    # CONTRÔLES DU PROGRAMME
+    # ==========================================
+    MODE_TEST = False       # True = 100% intelligence (pas de sauvegarde). False = Mode Entraînement
+    RENDER_GAME = False     # True = Affiche le jeu. False = Entraînement invisible hyper rapide
+    # ==========================================
+
     if MODE_TEST:
         agent.epsilon = 0.00
         print("🚨 MODE TEST ACTIVÉ : L'IA joue sérieusement, aucune sauvegarde ne sera faite.")
@@ -139,8 +144,6 @@ if __name__ == "__main__":
         if not file_exists:
             writer.writerow(["Episode", "Score", "Total_Reward", "Pieces_Placed", "Epsilon"])
 
-
-
     for e in range(episodes):
         env.reset()
         done = False
@@ -148,6 +151,7 @@ if __name__ == "__main__":
         
         possible_states = env.get_possible_states()
         
+        # --- BOUCLE D'UNE PARTIE ---
         while not done:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -159,15 +163,12 @@ if __name__ == "__main__":
             if not possible_states:
                 break 
 
-            # 1. On choisit l'action et on enregistre l'état *avec* ses lignes visibles !
             action = agent.act(possible_states)
             current_state_features = possible_states[action]
             
-            # 2. On exécute l'action dans le jeu
             _, reward, done = env.step(action)
             total_reward += reward
             
-            # 3. Double DQN : On anticipe le prochain état en utilisant notre cerveau actuel
             if not done:
                 next_possible_states = env.get_possible_states()
                 if next_possible_states:
@@ -179,34 +180,33 @@ if __name__ == "__main__":
                 next_state_features = np.zeros(agent.state_size, dtype=np.float32)
                 next_possible_states = None
             
-            # 4. On stocke la transition parfaite
             agent.remember(current_state_features, reward, next_state_features, done)
             
-            if e % 20 == 0:
+            # Affichage graphique si le paramètre est sur True
+            if RENDER_GAME:
                 env.render(screen)
                 
             agent.replay(batch_size) 
             possible_states = next_possible_states
             
-        if done:
-            if agent.epsilon > agent.epsilon_min:
-                agent.epsilon *= agent.epsilon_decay
-            
-            print(f"Episode: {e}/{episodes}, Score: {env.game.score}, Pieces: {env.pieces_placed}, Reward: {total_reward:.1f}, Epsilon: {agent.epsilon:.2f}")
-            
-            with open(log_file, mode='a', newline='') as file:
-                writer = csv.writer(file)
-                writer.writerow([e, env.game.score, round(total_reward, 1), env.pieces_placed, round(agent.epsilon, 3)])
+        # --- FIN DE LA PARTIE (EN DEHORS DU WHILE) ---
+        if agent.epsilon > agent.epsilon_min:
+            agent.epsilon *= agent.epsilon_decay
+        
+        print(f"Episode: {e}/{episodes}, Score: {env.game.score}, Pieces: {env.pieces_placed}, Reward: {total_reward:.1f}, Epsilon: {agent.epsilon:.2f}")
+        
+        with open(log_file, mode='a', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow([e, env.game.score, round(total_reward, 1), env.pieces_placed, round(agent.epsilon, 3)])
 
-            if env.game.score > best_score:
-                    best_score = env.game.score
-                    # On sauvegarde cette version précise dans un fichier à part !
-                    agent.save(best_model_file)
-                    print(f"🏆 NOUVEAU RECORD ABSOLU : {best_score} points ! Modèle champion sauvegardé !")
-                
-            # (Ton ancienne sauvegarde régulière tous les 50 épisodes peut rester pour l'historique)
-            if e % 50 == 0:
-                agent.update_target_network()
-                if not MODE_TEST:
-                    agent.save(model_file)
-            break
+        # Sauvegarde du Champion Absolu
+        if env.game.score > best_score:
+            best_score = env.game.score
+            agent.save(best_model_file)
+            print(f"🏆 NOUVEAU RECORD ABSOLU : {best_score} points ! Modèle champion sauvegardé !")
+            
+        # Sauvegarde régulière et mise à jour du réseau cible
+        if e % 50 == 0:
+            agent.update_target_network()
+            if not MODE_TEST:
+                agent.save(model_file)
