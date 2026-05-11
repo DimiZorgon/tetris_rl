@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch_directml
 import torch.optim as optim
 import random
 import numpy as np
@@ -31,7 +32,12 @@ class Agent:
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.998
         self.learning_rate = 0.0005
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch_directml.is_available():
+            self.device = torch_directml.device()
+            print("🚀 Entraînement sur le GPU via DirectML activé !")
+        else:
+            self.device = torch.device("cpu")
+            print("⚠️ DirectML non disponible, retour sur CPU.")
         
         self.model = DQN(state_size).to(self.device)
         self.target_model = DQN(state_size).to(self.device)
