@@ -80,12 +80,21 @@ def play_game(onnx_path):
     env = TetrisEnv()
     
     # Configuration de la session ONNX Runtime
-    # L'ordre de la liste est important : il tente d'abord le NPU (QNN), puis le CPU en secours
     providers = ['QNNExecutionProvider', 'CPUExecutionProvider']
+    
+    # On précise explicitement le chemin vers le pilote du NPU (Hexagon)
+    provider_options = [
+        {'backend_path': 'QnnHtp.dll', 'htp_performance_mode': 'burst'}, # Options pour QNN
+        {} # Options vides pour le CPU (secours)
+    ]
     
     print("🚀 Démarrage de la session ONNX Runtime...")
     try:
-        session = ort.InferenceSession(onnx_path, providers=providers)
+        session = ort.InferenceSession(
+            onnx_path, 
+            providers=providers,
+            provider_options=provider_options
+        )
         active_provider = session.get_providers()[0]
         print(f"🧠 Exécution propulsée par : {active_provider}")
     except Exception as e:
